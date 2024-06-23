@@ -7,7 +7,7 @@ app = 'face-recognition-app'
 primary_region = 'mad'
 
 [build]
-  dockerfile = "./Face-Recongition-Server/Dockerfile"
+  dockerfile = "./Face-Recognition-Server/Dockerfile"
 
 [http_service]
   internal_port = 5000
