@@ -1,0 +1,11 @@
+    .fa-eye, .fa-eye-slash {
+        position: absolute;
+        right: 70px;
+        top: -7px;
+    }
+
+    @media only screen and (max-width: 400px){
+        .fa-eye, .fa-eye-slash {
+            right: 50px;
+        }
+    }

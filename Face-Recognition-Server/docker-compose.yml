@@ -1,0 +1,15 @@
+services: 
+  face-recognition-server:
+    container-name: server
+    # image: node:18-alpine
+    build: ./
+    command: node index.js
+    workdir: /app/Face-Recongition-Server
+    ports:
+      "5000:5000"
+    environment:
+      DB_HOST: 'host.docker.internal'
+      DB_PORT: 5432
+      DB_USER: 'postgres'
+      DB_PASSWORD: 'postgres5991'
+      DB_NAME: 'Face-Recognition-App'

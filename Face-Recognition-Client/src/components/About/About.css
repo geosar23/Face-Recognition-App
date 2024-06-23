@@ -1,0 +1,27 @@
+.buttonLink:link {
+    color: #212529;
+}
+
+.buttonLink:visited {
+    color: #212529;
+}
+
+.buttonLink:hover {
+    color: white;
+}
+
+.buttonLink:active {
+    color: white;
+}
+
+.buttonLink {
+    text-decoration: none;
+}
+
+.enlarge-on-hover {
+    transition: transform 0.3s ease-in-out;
+}
+
+.enlarge-on-hover:hover {
+    transform: scale(1.1);
+}

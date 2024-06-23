@@ -1,0 +1,47 @@
+@keyframes rotateAndScale {
+    from {
+        transform: rotate(0deg) scale(0.01);
+    }
+    to {
+        transform: rotate(1800deg) scale(2.5);
+    }
+}
+
+@keyframes changeColor {
+    0% {
+        color: red;
+    }
+    25% {
+        color: yellow
+    }
+    50% {
+        color: green;
+    }
+    75% {
+        color: blue;
+    }
+    100% {
+        color: rgb(245, 53, 85)
+    }
+}
+
+.rotate-and-scale {
+    animation: rotateAndScale 2s cubic-bezier(0.32, 1, 0.68, 1) infinite;
+}
+
+.changeColor {
+    animation: changeColor 2s linear infinite;
+}
+
+.hoverOver {
+    z-index: 1;
+    color: red;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}

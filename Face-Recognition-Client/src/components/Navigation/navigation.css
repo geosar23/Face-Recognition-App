@@ -1,0 +1,19 @@
+.dark-modal .modal-content {
+  background-color: #343a40;
+  color: #fff;
+}
+
+.dark-modal .modal-header {
+  background-color: #212529;
+  color: #fff;
+}
+
+.dark-modal .modal-body {
+  background-color: #343a40;
+  color: #fff;
+}
+
+.dark-modal .modal-footer {
+  background-color: #343a40;
+  color: #fff;
+}
