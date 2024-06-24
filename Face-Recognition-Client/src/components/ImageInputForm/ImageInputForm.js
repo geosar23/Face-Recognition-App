@@ -7,7 +7,7 @@ const ImageInputForm = ({loading, imageUrl, onURLchange, onFileChange, onLinkSub
         <div className='form-group'>
             <div className='form-group'>
                 <p>
-                    {'This Magic Brain A will detect faces in your pictures via URL link for '}
+                    {'Instantly analyze photos from URLs for '}
                     <span className='text-warning font-weight-bold' style={{ fontSize: '40px' }}>{'1'}</span>
                     {' point per face recognized'}
                 </p>
@@ -27,7 +27,7 @@ const ImageInputForm = ({loading, imageUrl, onURLchange, onFileChange, onLinkSub
 
                 <div className="mt-5">
                     <p>
-                        {'This Magic Brain B will detect faces in your pictures via file uploading for '}
+                        {'Upload photos to detect faces for '}
                         <span className='text-danger font-weight-bold' style={{ fontSize: '40px' }}>2</span>
                         {' points per face recognized'}
                     </p>
