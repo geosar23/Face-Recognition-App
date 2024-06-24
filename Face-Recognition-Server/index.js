@@ -10,6 +10,10 @@ const favicon = require('serve-favicon');
 const path = require('path');
 require('dotenv').config()
 const _ = require('lodash');
+const CryptoJS = require("crypto-js");
+
+//SYMMETRIC ENCRYPTION
+const secretKey = process.env.SECRET_KEY || "fallbackKey123";
 
 //jwt secret key
 const jwtKey = process.env.JWT_SECRET_KEY;
@@ -67,7 +71,7 @@ const tokenChecker = (req, res, next) => {
 
 //Init Server
 app.listen(process.env.SERVER_PORT, '0.0.0.0', () => {
-    console.log(`Server online on port hey${process.env.SERVER_PORT}`)
+    console.log(`Server online on port ${process.env.SERVER_PORT}`)
 });
 
 //Get requests
@@ -84,7 +88,10 @@ app.get("/serverKeys", tokenChecker, async (req, res) => {
             CLARIFAI_MODEL_ID: process.env.CLARIFAI_MODEL_ID,
             CLARIFAI_MODEL_VERSION_ID: process.env.CLARIFAI_MODEL_VERSION_ID
         }
-        return res.json({ success: true, data: keys });
+
+        const encryptedData = encrypt(keys, secretKey);
+
+        return res.json({ success: true, data: encryptedData });
     } catch (error) {
         console.error(error);
         return res.send({ success: false, message: error.message });
@@ -404,6 +411,10 @@ function hashPassword(password) {
             }
         });
     });
+}
+
+function encrypt(data, secretKey) {
+    return CryptoJS.AES.encrypt(JSON.stringify(data), secretKey).toString();
 }
 
 const sanitizeUserEmail = (email) => {
