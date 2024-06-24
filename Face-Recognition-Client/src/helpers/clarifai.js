@@ -1,10 +1,14 @@
 import { toast } from 'react-toastify';
+import { decrypt } from './general';
 
 export let CLARIFAI_PAT = "";
 export let CLARIFAI_USER_ID = "";
 export let CLARIFAI_APP_ID = "";
 export let CLARIFAI_MODEL_ID = "";
 export let CLARIFAI_MODEL_VERSION_ID = "";
+
+// Replace with your secure encryption key
+const secretKey = process.env.REACT_APP_SECRET_KEY || "fallbackKey123";
 
 export const getServerKeys = async () => {
     try {
@@ -16,11 +20,14 @@ export const getServerKeys = async () => {
         const response = await fetch('/serverKeys', { headers });
         const res = await response.json();
 
-        CLARIFAI_PAT = res.data.CLARIFAI_PAT;
-        CLARIFAI_USER_ID = res.data.CLARIFAI_USER_ID;
-        CLARIFAI_APP_ID = res.data.CLARIFAI_APP_ID;
-        CLARIFAI_MODEL_ID = res.data.CLARIFAI_MODEL_ID;
-        CLARIFAI_MODEL_VERSION_ID = res.data.CLARIFAI_MODEL_VERSION_ID;
+        const decryptedData = decrypt(res.data, secretKey);
+
+        // Populate variables
+        CLARIFAI_PAT = decryptedData.CLARIFAI_PAT;
+        CLARIFAI_USER_ID = decryptedData.CLARIFAI_USER_ID;
+        CLARIFAI_APP_ID = decryptedData.CLARIFAI_APP_ID;
+        CLARIFAI_MODEL_ID = decryptedData.CLARIFAI_MODEL_ID;
+        CLARIFAI_MODEL_VERSION_ID = decryptedData.CLARIFAI_MODEL_VERSION_ID;
 
     } catch (error) {
         toast.error(`Error ${error.message || '404 Not found'}`);

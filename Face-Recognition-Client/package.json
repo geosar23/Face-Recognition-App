@@ -10,6 +10,8 @@
     "bootstrap": "^5.3.2",
     "clarifai": "^2.9.1",
     "cors": "^2.8.5",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^16.4.5",
     "express": "^4.18.2",
     "moment": "^2.29.4",
     "particles-bg": "^2.5.5",
