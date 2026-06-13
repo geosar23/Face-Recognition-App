@@ -31,14 +31,14 @@ function About({ onRouteChange }) {
             <div className="row justify-content-center mt-4 m">
                 <div className="col-sm-5 col-12 m-4 shadow p-3 bg-transparent rounded enlarge-on-hover">
                     <h2>
-                        <a className="buttonLink" href="https://www.linkedin.com/in/georgesaramantis/" target="_blank">
+                        <a className="buttonLink" href="https://www.linkedin.com/in/georgesaramantis/" target="_blank" rel="noreferrer">
                             <i className="fa-brands fa-linkedin"></i> LinkedIn
                         </a>
                     </h2>
                 </div>
                 <div className="col-sm-5 col-12 m-4 shadow p-3 bg-transparent rounded enlarge-on-hover">
                     <h2>
-                        <a className="buttonLink" href="https://github.com/geosar23" target="_blank">
+                        <a className="buttonLink" href="https://github.com/geosar23" target="_blank" rel="noreferrer">
                             <i className="fa-brands fa-github"></i> Github
                         </a>
                     </h2>

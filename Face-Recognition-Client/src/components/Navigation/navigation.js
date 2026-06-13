@@ -7,7 +7,8 @@ import Nav from 'react-bootstrap/Nav';
 import Navbar from 'react-bootstrap/Navbar';
 import Offcanvas from 'react-bootstrap/Offcanvas';
 import pkg from '../../../package.json';
-const { version } = pkg;
+
+const version = pkg.version;
 
 const Navigation = ({ onRouteChange, signIn, user, route }) => {
 

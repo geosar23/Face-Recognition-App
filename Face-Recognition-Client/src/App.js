@@ -26,7 +26,6 @@ function App() {
     //IMG SRC TO PROVIDE
     const [imageSrc, setImageSrc] = useState('');
 
-    const [error, setError] = useState(null);
     const [boxes, setBoxes] = useState([]);
     const [route, setRoute] = useState('');
     const [signIn, setSignIn] = useState(false);
@@ -46,7 +45,7 @@ function App() {
     const ref = useRef(null);
 
     useEffect(() => {
-        checkForToken();
+        checkForToken(); // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -222,7 +221,6 @@ function App() {
             .catch(error => {
                 setLoading(false);
                 toast.error(error?.message || "Error when trying to call the Clarifai API");
-                setError(error.message);
                 return;
             })
     }
@@ -305,7 +303,6 @@ function App() {
             .catch(error => {
                 setLoading(false);
                 toast.error(error?.message || "Error when trying to call the Clarifai API");
-                setError(error.message);
                 return;
             })
     }

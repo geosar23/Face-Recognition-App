@@ -16,7 +16,7 @@ const Rank = ({ user, pointsEarned }) => {
 
             return () => clearTimeout(timer);
         }
-    }, [user.score]);
+    }, [user.score, pointsEarned]);
 
     return (
         <div className='ma4 mt0'>

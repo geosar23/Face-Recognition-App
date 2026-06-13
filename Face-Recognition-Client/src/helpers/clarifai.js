@@ -1,5 +1,3 @@
-import { toast } from 'react-toastify';
-
 // Clarifai API calls are now proxied through the server to keep the PAT secret.
 // The server endpoints /predict/url and /predict/file handle the Clarifai requests.
 
