@@ -15,7 +15,7 @@ function About({ onRouteChange }) {
                 <div>
                     <h1>Welcome to Face Recognition!</h1>
                     <p>
-                        👋 Welcome to Face Recognition, my project inspired by the online course <a href="https://zerotomastery.io/courses/coding-bootcamp/" target="_blank" rel="noopener noreferrer">"The Complete Web Developer in 2021: Zero to Mastery"</a>.
+                        👋 Welcome to Face Recognition, my project inspired by the online course <a href="https://zerotomastery.io/courses/coding-bootcamp/" target="_blank" rel="noopener noreferrer">"The Complete Web Developer in 2020: Zero to Mastery"</a>.
                         I've taken the core concepts and significantly expanded the functionality over time.
                     </p>
                     <p>
