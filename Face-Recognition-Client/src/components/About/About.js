@@ -15,13 +15,21 @@ function About({ onRouteChange }) {
                 <div>
                     <h1>Welcome to Face Recognition!</h1>
                     <p>
-                        👋 Welcome to Face Recognition, my exciting project inspired by the renowned online course <a href="https://zerotomastery.io/courses/coding-bootcamp/" target="_blank" rel="noopener noreferrer" title="https://zerotomastery.io/courses/coding-bootcamp/">"The Complete Web Developer in 2024: Zero to Mastery"</a>.
-                        I've taken the core concepts and expanded the functionality, creating an interactive space for you to explore and have fun.
-                        In this unique experience, we leverage the power of the <a href="https://www.clarifai.com/" target="_blank" rel="noopener noreferrer" title="https://www.clarifai.com/">CLARIFAI API</a> for face recognition. To get started, simply register as a user, and then dive into the world of points and face detection!
-                        Earn 1 point for each face detected when you provide a URL to an image. Take it up a notch by uploading your own image file, and score 2 points for every face recognized.
-                        The more faces, the more points—challenge yourself and see how high you can go!
-                        Ready to embark on this facial recognition journey?
-                        Sign up, upload, and watch your points stack up as you explore the fascinating capabilities of this innovative technology. Let the face recognition adventure begin! 🚀</p>
+                        👋 Welcome to Face Recognition, my project inspired by the online course <a href="https://zerotomastery.io/courses/coding-bootcamp/" target="_blank" rel="noopener noreferrer">"The Complete Web Developer in 2024: Zero to Mastery"</a>.
+                        I've taken the core concepts and significantly expanded the functionality over time.
+                    </p>
+                    <p>
+                        <strong>Originally</strong>, the app used the <a href="https://www.clarifai.com/" target="_blank" rel="noopener noreferrer">Clarifai API</a> to detect faces server-side.
+                        When Clarifai removed their free tier, making every API call require paid credits, the face detection engine was replaced entirely.
+                    </p>
+                    <p>
+                        <strong>Today</strong>, face detection runs <strong>100% in your browser</strong> using <a href="https://github.com/vladmandic/face-api" target="_blank" rel="noopener noreferrer">face-api.js</a> — a TensorFlow.js-powered library.
+                        No images are ever sent to a third-party server. The model (~190 KB) loads once from a CDN and is cached by your browser for instant subsequent use.
+                    </p>
+                    <p>
+                        Earn <strong>1 point</strong> per face detected when submitting an image URL, or <strong>2 points</strong> per face when uploading a file directly.
+                        The more faces, the more points — see how high you can go! 🚀
+                    </p>
                     <p>Register your user and start earning points by providing a URL or uploading your own image file.</p>
                     <p>
                         <button className="btn btn-primary btn-lg" onClick={onRegister}>Get Started</button>

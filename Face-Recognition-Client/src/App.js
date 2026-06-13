@@ -11,7 +11,8 @@ import Register from './components/Register/Register'
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import { urlPredictOptions, filePredictOptions, saveImageToLocalStorage, checkIfImageHasBeenUploadedAlready } from './helpers/clarifai.js';
+import * as faceapi from '@vladmandic/face-api';
+import { saveImageToLocalStorage, checkIfImageHasBeenUploadedAlready } from './helpers/imageHistory.js';
 import { signOut } from './helpers/auth.js';
 import About from './components/About/About.js'
 
@@ -38,6 +39,7 @@ function App() {
         joined: null
     });
     const [loading, setLoading] = useState(false);
+    const [modelLoaded, setModelLoaded] = useState(false);
 
 
     const [pointsEarned, setPointsEarned] = useState(0);
@@ -51,6 +53,13 @@ function App() {
     useEffect(() => {
         cleanState('all')
     }, [user.id])
+
+    useEffect(() => {
+        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL)
+            .then(() => setModelLoaded(true))
+            .catch(() => toast.error('Failed to load face detection model'));
+    }, []);
 
     const checkForToken = async () => {
         // Cookie is sent automatically by the browser — no localStorage needed
@@ -90,31 +99,6 @@ function App() {
         });
     }
 
-    const calculateFaceLocation = (data) => {
-
-        const facesArray = data.outputs[0]?.data?.regions;
-
-        const numberOfFaces = data.outputs[0]?.data?.regions?.length || 0;
-
-        if (!numberOfFaces) {
-            toast.info("No faces recognized in the photo");
-            return;
-        }
-
-        return facesArray.map((face, index) => {
-            const clarifaiFace = face.region_info.bounding_box;
-            const image = document.getElementById('inputImage')
-            const width = Number(image.width)
-            const height = Number(image.height)
-            return {
-                leftCol: clarifaiFace.left_col * width,
-                topRow: clarifaiFace.top_row * height,
-                rightCol: width - (clarifaiFace.right_col * width),
-                bottomRow: height - (clarifaiFace.bottom_row * height)
-            }
-        })
-    }
-
     const displayFaceBox = (boxes) => {
         setBoxes(boxes);
     }
@@ -131,181 +115,170 @@ function App() {
         }
     }
 
-    const convertFileToBase64 = (filepath) => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(filepath);
-
-            reader.onload = () => {
-                resolve(reader.result)
-            };
-
-            reader.onerror = (error) => {
-                console.error('Error converting file to Base64:', error);
-                reject(error)
-            };
-        });
+    // Detect faces in an already-loaded HTMLImageElement.
+    // Returns boxes scaled to the 500px display width used by FaceRecognition.
+    const detectFaces = async (imgElement) => {
+        const displayWidth = 500;
+        const scaleX = displayWidth / imgElement.naturalWidth;
+        const displayHeight = Math.round(imgElement.naturalHeight * scaleX);
+        const detections = await faceapi.detectAllFaces(
+            imgElement,
+            new faceapi.TinyFaceDetectorOptions()
+        );
+        const resized = faceapi.resizeResults(detections, { width: displayWidth, height: displayHeight });
+        return {
+            count: resized.length,
+            boxes: resized.map(det => ({
+                leftCol: det.box.x,
+                topRow: det.box.y,
+                rightCol: displayWidth - (det.box.x + det.box.width),
+                bottomRow: displayHeight - (det.box.y + det.box.height),
+            }))
+        };
     };
 
-    const onLinkSubmition = (event) => {
-        cleanState("file")
-
+    const onLinkSubmition = async () => {
+        cleanState('file');
         if (!imageUrl) {
-            toast.warning("Please provide a url of an image");
+            toast.warning('Please provide a URL of an image');
+            return;
+        }
+        if (!modelLoaded) {
+            toast.info('Face detection model is still loading, please wait a moment...');
+            return;
+        }
+        if (checkIfImageHasBeenUploadedAlready(imageUrl, user.id)) {
+            toast.warning('You cannot use the same image more than once');
             return;
         }
 
-        setImageSrc(imageUrl)
-
-        // app.models.predict(Clarifai.FACE_DETECT_MODEL,imageUrl)
-        // app.models.predict('face-detection', imageUrl)
         setLoading(true);
-        fetch("/predict/url", urlPredictOptions(imageUrl))
-            .then(response => response.json())
-            .then(response => {
+
+        try {
+            // Fetch the image through the server proxy so cross-origin images work
+            const proxyRes = await fetch('/proxy/image', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ imageUrl })
+            });
+
+            if (!proxyRes.ok) {
+                const err = await proxyRes.json().catch(() => ({}));
                 setLoading(false);
-                if (response.status.code !== 10000) {
-                    if (response.outputs) {
-                        toast.error(`${response.outputs[0].status.description} \n ${response.outputs[0].status.details}`);
-                        return;
-                    } else {
-                        toast.error(`${response.status.description} \n ${response.status.details}`);
+                toast.error(err.message || 'Could not fetch the image. Check the URL and try again.');
+                return;
+            }
+
+            const blob = await proxyRes.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            setImageSrc(objectUrl);
+
+            const img = new Image();
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = objectUrl;
+            });
+
+            const { count, boxes: detectedBoxes } = await detectFaces(img);
+            setLoading(false);
+
+            if (!count) {
+                toast.info('No faces recognized in the photo');
+                return;
+            }
+
+            saveImageToLocalStorage(imageUrl, user.id);
+
+            fetch('/user/score', {
+                method: 'put',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ id: user.id, score: count })
+            })
+                .then(res => res.json())
+                .then(res => {
+                    if (!res.success || !res.score) {
+                        toast.error('Error: Server was not able to log your score, please try again');
                         return;
                     }
-                }
+                    toast.success(`Success, you claimed ${count} point${count > 1 ? 's' : ''}!`);
+                    setPointsEarned(count);
+                    setUser({ ...user, score: res.score });
+                });
 
-                //Check for duplicate image uploads
-                if (checkIfImageHasBeenUploadedAlready(response, user.id)) {
-                    toast.warning("You cannot use the same image more than once");
-                    return;
-                }
-                //Save image data to local storage
-                saveImageToLocalStorage(response, user.id)
+            displayFaceBox(detectedBoxes);
+            scrollToImage();
+        } catch {
+            setLoading(false);
+            toast.error('Could not process the image. Please try a different URL.');
+        }
+    };
 
-                //Score how many faces you found
-                const facesRecognized = response?.outputs[0]?.data?.regions?.length || 0;
-
-                if (facesRecognized) {
-                    fetch('/user/score', {
-                        method: 'put',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                        body: JSON.stringify({
-                            id: user.id,
-                            score: facesRecognized
-                        })
-                    }).then(res => res.json())
-                        .then((res) => {
-
-                            if (!res.success || !res.score) {
-                                toast.error("Error: Server was not able to log your score please try again");
-                                return;
-                            }
-
-                            toast.success(`Success, you claimed ${facesRecognized} points !`);
-
-                            setPointsEarned(facesRecognized);
-
-                            setUser({
-                                ...user,
-                                score: res.score,
-                            });
-
-                        })
-
-                    //Draw the boxes
-                    displayFaceBox(calculateFaceLocation(response, false));
-                    scrollToImage();
-                }
-            })
-            .catch(error => {
-                setLoading(false);
-                toast.error(error?.message || "Error when trying to call the Clarifai API");
-                return;
-            })
-    }
-
-    const onFileUpload = async (event) => {
-
-        cleanState("url")
-
+    const onFileUpload = async () => {
+        cleanState('url');
         if (!filepath) {
-            toast.warning("Please upload an image");
-            cleanState("url")
+            toast.warning('Please upload an image');
+            return;
+        }
+        if (!modelLoaded) {
+            toast.info('Face detection model is still loading, please wait a moment...');
             return;
         }
 
-        const base64String = await convertFileToBase64(filepath)
-        setImageSrc(base64String)
-        const base64Content = base64String.split(',')[1]; // Remove the data URI prefix
+        const imageId = filepath.name + '_' + filepath.size;
+        if (checkIfImageHasBeenUploadedAlready(imageId, user.id)) {
+            toast.warning('You cannot use the same image more than once');
+            return;
+        }
 
+        const objectUrl = URL.createObjectURL(filepath);
+        setImageSrc(objectUrl);
         setLoading(true);
-        fetch("/predict/file", filePredictOptions(base64Content))
-            .then(response => response.json())
-            .then(response => {
-                setLoading(false);
 
-                if (response.status.code !== 10000) {
-                    if (response.outputs[0]) {
-                        toast.error(`${response.outputs[0].status.description} \n ${response.outputs[0].status.details}`);
-                        return;
-                    } else {
-                        toast.error(`${response.status.description} \n ${response.status.details}`);
+        try {
+            const img = new Image();
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = objectUrl;
+            });
+
+            const { count, boxes: detectedBoxes } = await detectFaces(img);
+            setLoading(false);
+
+            if (!count) {
+                toast.info('No faces recognized in the photo');
+                return;
+            }
+
+            saveImageToLocalStorage(imageId, user.id);
+
+            fetch('/user/score', {
+                method: 'put',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ id: user.id, score: count * 2 })
+            })
+                .then(res => res.json())
+                .then(res => {
+                    if (!res.success || !res.score) {
+                        toast.error('Error: Server was not able to log your score, please try again');
                         return;
                     }
-                }
+                    toast.success(`Success, you claimed ${count * 2} point${count * 2 > 1 ? 's' : ''}!`);
+                    setPointsEarned(count * 2);
+                    setUser({ ...user, score: res.score });
+                });
 
-                //Check for duplicate image uploads
-                if (checkIfImageHasBeenUploadedAlready(response, user.id)) {
-                    toast.warning("You cannot use the same image more than once");
-                    return;
-                }
-                //Save image data to local storage
-                saveImageToLocalStorage(response, user.id);
-
-                //Score how many faces you found
-                const facesRecognized = response?.outputs[0]?.data?.regions?.length || 0;
-
-                if (facesRecognized) {
-                    fetch('/user/score', {
-                        method: 'put',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                        body: JSON.stringify({
-                            id: user.id,
-                            score: facesRecognized * 2
-                        })
-                    }).then(res => res.json())
-                        .then((res) => {
-
-                            if (!res.success || !res.score) {
-                                toast.error("Error: Server was not able to log your score please try again");
-                                return;
-                            }
-
-                            toast.success(`Success, you claimed ${facesRecognized * 2} points !`);
-
-                            setPointsEarned(facesRecognized * 2);
-
-                            setUser({
-                                ...user,
-                                score: res.score,
-                            });
-
-                            scrollToImage();
-
-                        })
-
-                    //Draw the boxes
-                    displayFaceBox(calculateFaceLocation(response, true))
-                }
-            })
-            .catch(error => {
-                setLoading(false);
-                toast.error(error?.message || "Error when trying to call the Clarifai API");
-                return;
-            })
-    }
+            displayFaceBox(detectedBoxes);
+            scrollToImage();
+        } catch {
+            setLoading(false);
+            toast.error('Could not process the image file. Please try a different image.');
+        }
+    };
 
     const cleanState = (mode) => {
 

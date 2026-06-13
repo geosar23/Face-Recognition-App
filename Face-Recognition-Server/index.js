@@ -322,68 +322,49 @@ app.delete("/user/:id", tokenChecker, async (req, res) => {
     }
 });
 
-// POST /predict/url — proxy Clarifai call server-side (keeps API keys off the client)
-app.post("/predict/url", tokenChecker, async (req, res) => {
+// POST /proxy/image — fetch an external image server-side and return it as binary.
+// Lets the client avoid CORS restrictions when loading cross-origin images for face detection.
+// SSRF guard: only plain http/https to public hostnames are allowed.
+app.post("/proxy/image", tokenChecker, async (req, res) => {
     try {
         const { imageUrl } = req.body;
         if (!imageUrl || typeof imageUrl !== 'string') {
             return res.status(400).json({ success: false, message: 'Invalid image URL' });
         }
 
-        const raw = JSON.stringify({
-            user_app_id: {
-                user_id: process.env.CLARIFAI_USER_ID,
-                app_id: process.env.CLARIFAI_APP_ID
-            },
-            inputs: [{ data: { image: { url: imageUrl } } }]
-        });
-
-        const response = await fetch('https://api.clarifai.com/v2/models/face-detection/outputs', {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'Authorization': 'Key ' + process.env.CLARIFAI_PAT
-            },
-            body: raw
-        });
-
-        const data = await response.json();
-        return res.json(data);
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ success: false, message: 'Internal server error' });
-    }
-});
-
-// POST /predict/file — proxy Clarifai call server-side (keeps API keys off the client)
-app.post("/predict/file", tokenChecker, async (req, res) => {
-    try {
-        const { imageBytes } = req.body;
-        if (!imageBytes || typeof imageBytes !== 'string') {
-            return res.status(400).json({ success: false, message: 'Invalid image data' });
+        let parsed;
+        try {
+            parsed = new URL(imageUrl);
+        } catch {
+            return res.status(400).json({ success: false, message: 'Malformed URL' });
         }
 
-        const raw = JSON.stringify({
-            user_app_id: {
-                user_id: process.env.CLARIFAI_USER_ID,
-                app_id: process.env.CLARIFAI_APP_ID
-            },
-            inputs: [{ data: { image: { base64: imageBytes } } }]
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return res.status(400).json({ success: false, message: 'Only http/https URLs are allowed' });
+        }
+
+        // Basic SSRF guard — block private / loopback hostnames
+        const blocked = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1|0\.0\.0\.0)/i;
+        if (blocked.test(parsed.hostname)) {
+            return res.status(400).json({ success: false, message: 'URL not allowed' });
+        }
+
+        const imageResponse = await fetch(imageUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FaceRecognitionApp/1.0)' }
         });
 
-        const response = await fetch('https://api.clarifai.com/v2/models/face-detection/outputs', {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'Authorization': 'Key ' + process.env.CLARIFAI_PAT
-            },
-            body: raw
-        });
+        if (!imageResponse.ok) {
+            return res.status(imageResponse.status).json({ success: false, message: 'Failed to fetch image' });
+        }
 
-        const data = await response.json();
-        return res.json(data);
+        const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
+        if (!contentType.startsWith('image/')) {
+            return res.status(400).json({ success: false, message: 'URL does not point to an image' });
+        }
+
+        res.setHeader('Content-Type', contentType);
+        const buffer = Buffer.from(await imageResponse.arrayBuffer());
+        return res.send(buffer);
     } catch (error) {
         console.error(error);
         return res.status(500).json({ success: false, message: 'Internal server error' });
