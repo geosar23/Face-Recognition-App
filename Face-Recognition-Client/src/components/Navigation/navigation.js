@@ -6,6 +6,7 @@ import Container from 'react-bootstrap/Container';
 import Nav from 'react-bootstrap/Nav';
 import Navbar from 'react-bootstrap/Navbar';
 import Offcanvas from 'react-bootstrap/Offcanvas';
+import { version } from '../../../package.json';
 
 const Navigation = ({ onRouteChange, signIn, user, route }) => {
 
@@ -79,6 +80,9 @@ const Navigation = ({ onRouteChange, signIn, user, route }) => {
                                 }
                             </Nav>
                         </Offcanvas.Body>
+                        <div className="text-center text-secondary pb-3" style={{ fontSize: '0.75rem' }}>
+                            v{version}
+                        </div>
                     </Navbar.Offcanvas>
                 </Container>
             </Navbar>
