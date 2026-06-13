@@ -34,6 +34,9 @@ const DB = knex({
 
 const app = express();
 
+// Trust the first proxy (needed for express-rate-limit when behind a proxy / dev server)
+app.set('trust proxy', 1);
+
 // Serve static content from frontend
 app.use(express.static(path.join(__dirname, '../Face-Recognition-Client/build')));
 
@@ -391,7 +394,7 @@ app.post("/predict/file", tokenChecker, async (req, res) => {
 if (process.env.NODE_ENV !== 'development') {
     app.get('/*', (req, res) => {
         res.sendFile(path.join(__dirname, '../Face-Recognition-Client/build/index.html'), function (err) {
-            if (err) throw new Error(err);
+            if (err) res.status(500).send('Server error: client build not found. Run `npm run build` in the client directory.');
         });
     });
 }
