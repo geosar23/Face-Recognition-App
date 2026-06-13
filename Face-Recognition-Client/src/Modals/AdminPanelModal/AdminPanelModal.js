@@ -18,12 +18,9 @@ function AdminPanelModal({ show, onHide }) {
     }, []);
 
     const getUserData = () => {
-        const authorizationToken = window.localStorage.getItem('token');
         fetch('/users', {
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': authorizationToken
-            }
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
         })
             .then((response) => response.json())
             .then((data) => {
@@ -91,9 +88,6 @@ function AdminPanelModal({ show, onHide }) {
                                             </div>
                                             <div className="mb-2">
                                                 <strong>Email:</strong> {user.email}
-                                            </div>
-                                            <div className="mb-2">
-                                                <strong>Password:</strong> {user.password}
                                             </div>
                                         </div>
                                         <div className="col-md-4">

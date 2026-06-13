@@ -11,7 +11,8 @@ import Register from './components/Register/Register'
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import { getServerKeys, filePredict, urlPredict, saveImageToLocalStorage, checkIfImageHasBeenUploadedAlready } from './helpers/clarifai.js';
+import { urlPredictOptions, filePredictOptions, saveImageToLocalStorage, checkIfImageHasBeenUploadedAlready } from './helpers/clarifai.js';
+import { signOut } from './helpers/auth.js';
 import About from './components/About/About.js'
 
 function App() {
@@ -33,7 +34,6 @@ function App() {
         id: "",
         name: "",
         email: "",
-        password: "",
         entries: 0,
         score: 0,
         joined: null
@@ -46,11 +46,7 @@ function App() {
     const ref = useRef(null);
 
     useEffect(() => {
-        checkForToken().then((res) => {
-            if (res) {
-                getServerKeys();
-            }
-        })
+        checkForToken();
     }, []);
 
     useEffect(() => {
@@ -58,33 +54,24 @@ function App() {
     }, [user.id])
 
     const checkForToken = async () => {
-        const authorizationToken = window.localStorage.getItem('token');
-        if (authorizationToken) {
-            const response = await fetch('/signin', {
-                method: 'post',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': authorizationToken
-                },
-            });
-            const res = await response.json();
+        // Cookie is sent automatically by the browser — no localStorage needed
+        const response = await fetch('/signin', {
+            method: 'post',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
+        });
+        const res = await response.json();
 
-            if (res.success) {
-                loadUser(res.user);
-                onRouteChange('home');
-                return true;
-            } else {
-                onRouteChange('about');
-                return false;
-            }
-
+        if (res.success) {
+            loadUser(res.user);
+            onRouteChange('home');
         } else {
             onRouteChange('about');
         }
     };
 
-    const handleLogout = () => {
-        window.localStorage.removeItem('token');
+    const handleLogout = async () => {
+        await signOut();
     };
 
     const scrollToImage = () => {
@@ -97,8 +84,7 @@ function App() {
         setUser({
             id: data.id,
             name: data.name,
-            emai: data.email,
-            password: data.password,
+            email: data.email,
             entries: data.entries,
             score: data.score,
             joined: data.joined
@@ -175,7 +161,7 @@ function App() {
         // app.models.predict(Clarifai.FACE_DETECT_MODEL,imageUrl)
         // app.models.predict('face-detection', imageUrl)
         setLoading(true);
-        fetch("https://api.clarifai.com/v2/models/face-detection/outputs", urlPredict(imageUrl))
+        fetch("/predict/url", urlPredictOptions(imageUrl))
             .then(response => response.json())
             .then(response => {
                 setLoading(false);
@@ -201,10 +187,10 @@ function App() {
                 const facesRecognized = response?.outputs[0]?.data?.regions?.length || 0;
 
                 if (facesRecognized) {
-                    const authorizationToken = window.localStorage.getItem('token');
                     fetch('/user/score', {
                         method: 'put',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': authorizationToken },
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
                         body: JSON.stringify({
                             id: user.id,
                             score: facesRecognized
@@ -256,7 +242,7 @@ function App() {
         const base64Content = base64String.split(',')[1]; // Remove the data URI prefix
 
         setLoading(true);
-        fetch("https://api.clarifai.com/v2/models/face-detection/outputs", filePredict(base64Content))
+        fetch("/predict/file", filePredictOptions(base64Content))
             .then(response => response.json())
             .then(response => {
                 setLoading(false);
@@ -283,10 +269,10 @@ function App() {
                 const facesRecognized = response?.outputs[0]?.data?.regions?.length || 0;
 
                 if (facesRecognized) {
-                    const authorizationToken = window.localStorage.getItem('token');
                     fetch('/user/score', {
                         method: 'put',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': authorizationToken },
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
                         body: JSON.stringify({
                             id: user.id,
                             score: facesRecognized * 2

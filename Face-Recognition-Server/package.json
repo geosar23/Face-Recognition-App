@@ -8,19 +8,19 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "bcrypt-nodejs": "^0.0.3",
+    "bcryptjs": "^3.0.3",
     "body-parser": "^1.20.1",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "crypto-js": "^4.2.0",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "express-rate-limit": "^8.5.2",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "knex": "^2.5.1",
-    "lodash": "^4.17.21",
     "morgan": "^1.10.0",
-    "pg": "^8.11.3",
-    "serve-favicon": "^2.5.0"
+    "pg": "^8.11.3"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

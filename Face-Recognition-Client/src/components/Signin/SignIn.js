@@ -1,8 +1,6 @@
 import React, { useState } from "react";
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { getServerKeys } from '../../helpers/clarifai';
-import { saveAuthTokenInSession } from "../../helpers/auth";
 import './SignIn.css'
 
 function SignIn({ onRouteChange, loadUser }) {
@@ -37,9 +35,8 @@ function SignIn({ onRouteChange, loadUser }) {
         setLoading(true);
         fetch('/signin', {
             method: 'post',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({
                 email: signInEmail,
                 password: signInPassword
@@ -54,9 +51,7 @@ function SignIn({ onRouteChange, loadUser }) {
                     toast.error(msg)
                     return;
                 }
-                saveAuthTokenInSession(data.token);
                 loadUser(data.user);
-                await getServerKeys();
                 onRouteChange('home');
             })
             .catch(error => {

@@ -1,22 +1,24 @@
 const express = require("express");
 const bodyParser = require("body-parser");
-const bcrypt = require("bcrypt-nodejs");
+const bcrypt = require("bcryptjs");
 const cors = require("cors");
 const knex = require('knex');
 const morgan = require('morgan');
 const helmet = require('helmet');
 const jwt = require('jsonwebtoken');
-const favicon = require('serve-favicon');
 const path = require('path');
-require('dotenv').config()
-const _ = require('lodash');
-const CryptoJS = require("crypto-js");
+const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
+require('dotenv').config();
 
-//SYMMETRIC ENCRYPTION
-const secretKey = process.env.SECRET_KEY || "fallbackKey123";
-
-//jwt secret key
+const secretKey = process.env.SECRET_KEY;
 const jwtKey = process.env.JWT_SECRET_KEY;
+
+// Crash on startup if required secrets are not set
+if (!secretKey || !jwtKey) {
+    console.error("FATAL: SECRET_KEY and JWT_SECRET_KEY environment variables must be set.");
+    process.exit(1);
+}
 
 //Connect to DB
 const DB = knex({
@@ -33,198 +35,179 @@ const DB = knex({
 const app = express();
 
 // Serve static content from frontend
-// app.use(favicon(path.join(__dirname, '../Face-Recognition-Client/public', 'favicon.ico')))
-app.use(express.static(path.join(__dirname, '../Face-Recognition-Client/build')))
+app.use(express.static(path.join(__dirname, '../Face-Recognition-Client/build')));
 
-//Middlewares
-app.use(helmet());
-app.use(cors());
-app.use(bodyParser.json());
-app.use(morgan('dev'));
-app.use((req, res, next) => {
-    // res.setHeader(
-    //     "Content-Security-Policy",
-    //     "default-src 'self'; img-src * data:; connect-src *; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
-    // );
-    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-    next();
+// Rate limiter for auth endpoints (20 requests per 15 min)
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, message: 'Too many requests, please try again later.' }
 });
 
-const tokenChecker = (req, res, next) => {
-    // let validToken = false;
-    // let userAuthenticated = false;
-    const incomingToken = req.headers.authorization;
-    jwt.verify(incomingToken, jwtKey, async (err, decoded) => {
-        if (err || !decoded) {
-            return res.status(401).json('Unauthorized');
-        }
+const isProduction = process.env.NODE_ENV === 'production';
+const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:3000';
 
-        // Token is valid, user is already authenticated 
-        // let validToken = true;
-        //Check if token is from the same user that is loged in 
-        // const tokenUserId = decoded.id;
-        // const bodyUserId = req.body.userId;
-        // const userAuthenticated = (tokenUserId === bodyUserId);
+// Middlewares
+app.use(helmet());
+app.use(cors({ origin: clientOrigin, credentials: true }));
+app.use(bodyParser.json({ limit: '10mb' })); // 10mb allows base64 image uploads
+app.use(cookieParser());
+app.use(morgan('dev'));
+
+// httpOnly cookie options — tokens are never accessible from JS
+const COOKIE_OPTIONS = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'strict' : 'lax',
+    maxAge: 3 * 60 * 60 * 1000 // 3 hours
+};
+
+// Auth middleware — reads JWT from httpOnly cookie, attaches userId to request
+const tokenChecker = (req, res, next) => {
+    const token = req.cookies.token;
+    if (!token) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    jwt.verify(token, jwtKey, (err, decoded) => {
+        if (err || !decoded) return res.status(401).json({ success: false, message: 'Unauthorized' });
+        req.userId = decoded.id;
         return next();
     });
-}
+};
 
 //Init Server
 app.listen(process.env.SERVER_PORT, '0.0.0.0', () => {
-    console.log(`Server online on port ${process.env.SERVER_PORT}`)
+    console.log(`Server online on port ${process.env.SERVER_PORT}`);
 });
 
 //Get requests
 app.get("/", (req, res) => {
-    res.send(`Server is running on port ${process.env.SERVER_PORT}`);
+    res.send(`Server is running`);
 });
 
-app.get("/serverKeys", tokenChecker, async (req, res) => {
-    try {
-        const keys = {
-            CLARIFAI_PAT: process.env.CLARIFAI_PAT,
-            CLARIFAI_USER_ID: process.env.CLARIFAI_USER_ID,
-            CLARIFAI_APP_ID: process.env.CLARIFAI_APP_ID,
-            CLARIFAI_MODEL_ID: process.env.CLARIFAI_MODEL_ID,
-            CLARIFAI_MODEL_VERSION_ID: process.env.CLARIFAI_MODEL_VERSION_ID
-        }
-
-        const encryptedData = encrypt(keys, secretKey);
-
-        return res.json({ success: true, data: encryptedData });
-    } catch (error) {
-        console.error(error);
-        return res.send({ success: false, message: error.message });
-    }
-});
-
+// GET /users — password excluded from response (TODO: restrict to admin role)
 app.get("/users", tokenChecker, async (req, res) => {
     try {
-        const users = await DB.select('*').from('users');
-
-        if (!users) {
-            throw new Error("Users not found");
-        }
-
-        return res.json(users)
-
+        const users = await DB.select('id', 'name', 'email', 'entries', 'score', 'joined').from('users');
+        return res.json(users);
     } catch (error) {
         console.error(error);
-        return res.send({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });
 
+// GET /user/:id — users can only fetch their own profile
 app.get("/user/:id", tokenChecker, async (req, res) => {
     try {
+        const id = parseInt(req.params.id, 10);
+        if (req.userId !== id) return res.status(403).json({ success: false, message: 'Forbidden' });
 
-        const { id } = req.params;
+        const user = await DB
+            .select('id', 'name', 'email', 'entries', 'score', 'joined')
+            .from('users')
+            .where('id', id)
+            .first();
 
-        const user = await DB.select('*').from('users').where('id', id).first();
-
-        if (!user) {
-            throw new Error("User not found");
-        }
-
-        return res.json(user)
-
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+        return res.json(user);
     } catch (error) {
         console.error(error);
-        return res.send({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });
 
-// Post requests
-app.post("/signin", async (req, res) => {
+// POST /signin — cookie-based auth; re-auth from existing cookie or standard credential login
+app.post("/signin", authLimiter, async (req, res) => {
     try {
-        // Check if a token is present in the headers
-        const incomingToken = req.headers.authorization;
-        if (incomingToken) {
-            // Verify the incoming token
-            jwt.verify(incomingToken, jwtKey, async (err, decoded) => {
-                if (err) {
-                    // Token is not valid
-                    return res.json({
-                        success: false,
-                        message: 'Invalid token'
-                    });
+        // Re-authenticate from existing httpOnly cookie
+        const existingToken = req.cookies.token;
+        if (existingToken) {
+            return jwt.verify(existingToken, jwtKey, async (err, decoded) => {
+                if (err || !decoded) {
+                    res.clearCookie('token', COOKIE_OPTIONS);
+                    return res.json({ success: false, message: 'Invalid token' });
                 }
-
-                // Token is valid, user is already authenticated 
-                const userId = decoded.id
-                //Fetch user from DB
-
-                const user = await DB.select('*').from('users').where('id', userId).first();
-
-                return res.json({
-                    user: user,
-                    success: true
-                });
-            });
-        } else {
-            // No token in headers, perform regular sign-in logic
-
-            if (!req.body || !req.body.email || !req.body.password) {
-                throw new Error("Request parameters are missing");
-            }
-
-            const email = req.body.email;
-            const password = req.body.password;
-
-            // Check if the user and login entry with the provided email exists in the database
-            const user = await DB('users').where({ email }).first();
-            const login = await DB('login').where({ email }).first();
-
-            if (!user || !login) {
-                return res.json({
-                    success: false,
-                    message: "Incorrect credentials"
-                });
-            }
-
-            bcrypt.compare(password, login.hash, async function (err, answer) {
-                if (!answer) {
-                    return res.json({
-                        success: false,
-                        message: "Incorrect credentials"
-                    });
-                }
-
-                // Update the user's entries count
-                const updatedUser = { ...user, entries: parseInt(user.entries) + 1 };
-
-                // Update the user's entries count in the database
-                await DB('users').where({ email }).update(updatedUser);
-
-                // JWT token sign
-                const userId = updatedUser.id
-                const newToken = jwt.sign({ id: userId }, process.env.JWT_SECRET_KEY, { expiresIn: '3h' });
-
-                return res.json({
-                    user: updatedUser,
-                    token: newToken,
-                    success: true
-                });
+                const user = await DB
+                    .select('id', 'name', 'email', 'entries', 'score', 'joined')
+                    .from('users')
+                    .where('id', decoded.id)
+                    .first();
+                return res.json({ user, success: true });
             });
         }
 
+        // Regular credential sign-in
+        const { email, password } = req.body || {};
+        if (!email || !password) {
+            return res.status(400).json({ success: false, message: 'Request parameters are missing' });
+        }
+
+        if (typeof email !== 'string' || email.length > 254 ||
+            typeof password !== 'string' || password.length > 128) {
+            return res.status(400).json({ success: false, message: 'Invalid input' });
+        }
+
+        const user = await DB('users').where({ email }).first();
+        const login = await DB('login').where({ email }).first();
+
+        if (!user || !login) {
+            return res.json({ success: false, message: 'Incorrect credentials' });
+        }
+
+        const match = await bcrypt.compare(password, login.hash);
+        if (!match) {
+            return res.json({ success: false, message: 'Incorrect credentials' });
+        }
+
+        const updatedEntries = parseInt(user.entries) + 1;
+        await DB('users').where({ email }).update({ entries: updatedEntries });
+
+        const newToken = jwt.sign({ id: user.id }, jwtKey, { expiresIn: '3h' });
+        res.cookie('token', newToken, COOKIE_OPTIONS);
+
+        const { password: _pw, ...safeUser } = { ...user, entries: updatedEntries };
+        return res.json({ user: safeUser, success: true });
+
     } catch (error) {
         console.error(error);
-        res.send({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });
 
-app.post("/register", async (req, res) => {
+// POST /signout — clears the auth cookie
+app.post("/signout", (req, res) => {
+    res.clearCookie('token', COOKIE_OPTIONS);
+    return res.json({ success: true });
+});
 
+// POST /register — server-side validation + cookie on success
+app.post("/register", authLimiter, async (req, res) => {
     try {
+        const { email, name, password } = req.body || {};
 
-        if (!req.body || !req.body.email || !req.body.password || !req.body.name) {
-            return res.json({
+        if (!email || !password || !name) {
+            return res.status(400).json({ success: false, message: 'Missing required fields' });
+        }
+
+        // Input length limits
+        if (typeof email !== 'string' || email.length > 254 ||
+            typeof name !== 'string' || name.length < 2 || name.length > 100 ||
+            typeof password !== 'string' || password.length > 128) {
+            return res.status(400).json({ success: false, message: 'Invalid input' });
+        }
+
+        // Email format
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ success: false, message: 'Invalid email address' });
+        }
+
+        // Password complexity (mirrors client-side validation)
+        if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) {
+            return res.status(400).json({
                 success: false,
-                message: "Incorrect parameters"
+                message: 'Password must be at least 8 characters with uppercase, lowercase, and a number'
             });
         }
-
-        const { email, name, password } = req.body;
 
         const userWithEmail = await DB('users').where({ email }).first();
         const userWithName = await DB('users').where({ name }).first();
@@ -232,204 +215,187 @@ app.post("/register", async (req, res) => {
         if (userWithEmail || userWithName) {
             return res.json({
                 success: false,
-                message: userWithEmail ? "Email already in use" : "Name already in use"
+                message: userWithEmail ? 'Email already in use' : 'Name already in use'
             });
         }
 
-        const hashedPassword = await hashPassword(password);
-        if (!hashedPassword) {
-            throw new Error("Password hashing failed");
-        }
+        const hashedPassword = await bcrypt.hash(password, 12);
 
-        let newUser = {
-            name: name,
-            email: email,
-            joined: new Date()
-        }
-
+        const newUser = { name, email, joined: new Date() };
         const newLogin = {
             hash: hashedPassword,
             email: email
         }
 
-        //Knex transactions make sure that if one DB operation fails, 
-        //others fail as well so we do not add non completed entries in our database
-        await DB.transaction(trx => {
-
-            //Insert new login entry
-            trx.insert(newLogin).into('login').returning('email').then((email) => {
-
-                //Insert new user entry
-                return trx('users').returning('*').insert(newUser);
-            }).then(trx.commit).catch(trx.rollback);
-        })
-
-        //Fetch new User and return;
-        newUser = await DB('users').where({ email }).first();
-
-        const userId = newUser.id
-        const newToken = jwt.sign({ id: userId }, process.env.JWT_SECRET_KEY, { expiresIn: '3h' });
-
-
-        return res.json({
-            success: true,
-            user: newUser,
-            token: newToken
+        //Knex transactions ensure both inserts succeed or both fail
+        await DB.transaction(async trx => {
+            await trx.insert(newLogin).into('login');
+            await trx('users').insert(newUser);
         });
+
+        const createdUser = await DB
+            .select('id', 'name', 'email', 'entries', 'score', 'joined')
+            .from('users')
+            .where({ email })
+            .first();
+
+        const newToken = jwt.sign({ id: createdUser.id }, jwtKey, { expiresIn: '3h' });
+        res.cookie('token', newToken, COOKIE_OPTIONS);
+
+        return res.json({ success: true, user: createdUser });
 
     } catch (error) {
         console.error(error);
-        return res.send({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });
 
 //Put requests
+// PUT /user/score — users can only update their own score
 app.put("/user/score", tokenChecker, async (req, res) => {
     try {
-
         const { id, score } = req.body;
-
-        const user = await DB.select('*').from('users').where('id', id).first();
-
-        if (!user) {
-            throw new Error("User not found");
+        if (req.userId !== parseInt(id, 10)) {
+            return res.status(403).json({ success: false, message: 'Forbidden' });
         }
 
+        const user = await DB.select('score').from('users').where('id', id).first();
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
         const updatedScore = parseInt(user.score) + score;
+        await DB('users').where({ id }).update({ score: updatedScore });
 
-        const updatedUser = { ...user, score: updatedScore };
-
-        // Update the user's entries count in the database
-        await DB('users').where({ id }).update(updatedUser);
-
-        return res.json({
-            success: true,
-            score: updatedScore
-        });
-
+        return res.json({ success: true, score: updatedScore });
     } catch (error) {
         console.error(error);
-        return res.send({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });
 
+// PUT /user/:id — users can only edit their own account
 app.put("/user/:id", tokenChecker, async (req, res) => {
     try {
+        const id = parseInt(req.params.id, 10);
+        if (req.userId !== id) return res.status(403).json({ success: false, message: 'Forbidden' });
 
-        const { id } = req.params;
         const { name, email, joined, entries, score } = req.body;
 
         const user = await DB.select('*').from('users').where('id', id).first();
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        if (!user) {
-            throw new Error("User not found");
-        }
-
-        const updatedUser = _.cloneDeep(user);;
-
-        if (name) {
-            updatedUser.name = name;
-        }
-
-        if (email) {
-            updatedUser.email = email;
-        }
-
-        if (joined) {
-            updatedUser.joined = joined;
-        }
-
-        if (entries) {
-            updatedUser.entries = entries;
-        }
-
-        if (score) {
-            updatedUser.score = score;
-        }
+        const updatedUser = { ...user };
+        if (name !== undefined) updatedUser.name = name;
+        if (email !== undefined) updatedUser.email = email;
+        if (joined !== undefined) updatedUser.joined = joined;
+        if (entries !== undefined) updatedUser.entries = entries;
+        if (score !== undefined) updatedUser.score = score;
 
         await DB('users').where({ id }).update(updatedUser);
-
-        return res.json({
-            success: true,
-        });
-
+        return res.json({ success: true });
     } catch (error) {
-        console.error(error, error.stack, req.body);
-        return res.send({ success: false, message: error.message });
+        console.error(error);
+        return res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });
 
 //Delete Requests
+// DELETE /user/:id — users can only delete their own account
 app.delete("/user/:id", tokenChecker, async (req, res) => {
     try {
-        const { id } = req.params;
+        const id = parseInt(req.params.id, 10);
+        if (req.userId !== id) return res.status(403).json({ success: false, message: 'Forbidden' });
 
-        // Check if the user with the given ID exists in the database
         const user = await DB('users').where({ id }).first();
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        if (!user) {
-            return res.status(404).json("User not found");
-        }
-
-        // Delete the user and his login from the database
         await DB('users').where('email', user.email).del();
         await DB('login').where('email', user.email).del();
 
+        res.clearCookie('token', COOKIE_OPTIONS);
         return res.json({ success: true });
-
     } catch (error) {
         console.error(error);
-        return res.json({ success: false, message: error.message });
+        return res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });
 
-// It is important to have this after the rest of the endpoints
-if (process.env.NODE_ENV !== 'development') {
-    // Fixes react router issue https://ui.dev/react-router-cannot-get-url-refresh/
-    app.get('/*', (req, res) => {
-        res.sendFile(path.join(__dirname, '../Face-Recognition-Client/build/index.html'), function (err) {
-            if (err) {
-                throw new Error(err)
-            }
-        })
-    })
-}
+// POST /predict/url — proxy Clarifai call server-side (keeps API keys off the client)
+app.post("/predict/url", tokenChecker, async (req, res) => {
+    try {
+        const { imageUrl } = req.body;
+        if (!imageUrl || typeof imageUrl !== 'string') {
+            return res.status(400).json({ success: false, message: 'Invalid image URL' });
+        }
 
-app.on('error', (error) => {
-    console.error(error)
+        const raw = JSON.stringify({
+            user_app_id: {
+                user_id: process.env.CLARIFAI_USER_ID,
+                app_id: process.env.CLARIFAI_APP_ID
+            },
+            inputs: [{ data: { image: { url: imageUrl } } }]
+        });
+
+        const response = await fetch('https://api.clarifai.com/v2/models/face-detection/outputs', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Key ' + process.env.CLARIFAI_PAT
+            },
+            body: raw
+        });
+
+        const data = await response.json();
+        return res.json(data);
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ success: false, message: 'Internal server error' });
+    }
 });
 
+// POST /predict/file — proxy Clarifai call server-side (keeps API keys off the client)
+app.post("/predict/file", tokenChecker, async (req, res) => {
+    try {
+        const { imageBytes } = req.body;
+        if (!imageBytes || typeof imageBytes !== 'string') {
+            return res.status(400).json({ success: false, message: 'Invalid image data' });
+        }
 
-//Helper functions
-function hashPassword(password) {
-    return new Promise((resolve, reject) => {
-        bcrypt.hash(password, null, null, (err, hash) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(hash);
-            }
+        const raw = JSON.stringify({
+            user_app_id: {
+                user_id: process.env.CLARIFAI_USER_ID,
+                app_id: process.env.CLARIFAI_APP_ID
+            },
+            inputs: [{ data: { image: { base64: imageBytes } } }]
+        });
+
+        const response = await fetch('https://api.clarifai.com/v2/models/face-detection/outputs', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': 'Key ' + process.env.CLARIFAI_PAT
+            },
+            body: raw
+        });
+
+        const data = await response.json();
+        return res.json(data);
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+// Catch-all for React Router — must be after all API routes
+if (process.env.NODE_ENV !== 'development') {
+    app.get('/*', (req, res) => {
+        res.sendFile(path.join(__dirname, '../Face-Recognition-Client/build/index.html'), function (err) {
+            if (err) throw new Error(err);
         });
     });
 }
 
-function encrypt(data, secretKey) {
-    return CryptoJS.AES.encrypt(JSON.stringify(data), secretKey).toString();
-}
-
-const sanitizeUserEmail = (email) => {
-
-}
-
-// //---------------------------------------------------------
-// bcrypt.hash("bacon", null, null, function(err, hash) {
-//     // Store hash in your password DB.
-// });
-
-// // Load hash from your password DB.
-// bcrypt.compare("bacon", hash, function(err, res) {
-//     // res == true
-// });
-// bcrypt.compare("veggies", hash, function(err, res) {
-//     // res = false
-// });
+app.on('error', (error) => {
+    console.error(error);
+});

@@ -6,13 +6,10 @@ import { capitalizeFirstLetter } from '../../helpers/general';
 function DeleteAccountModal({show, onHide, onDelete, user, adminAccess}) {
 
     const deleteUser = () => {
-        const authorizationToken = window.localStorage.getItem('token');
         fetch(`/user/${user.id}`, {
             method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': authorizationToken
-            }
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
         })
         .then(response => response.json())
         .then(data => {

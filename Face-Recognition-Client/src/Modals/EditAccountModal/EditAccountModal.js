@@ -20,10 +20,10 @@ function EditAccountModal({ show, onHide, onEdit, user }) {
 
     const editUser = () => {
         setIsLoading(true);
-        const authorizationToken = window.localStorage.getItem('token');
         fetch(`/user/${user.id}`, {
             method: 'put',
-            headers: { 'Content-Type': 'application/json', 'Authorization': authorizationToken },
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({
                 name: name,
                 email: email,
